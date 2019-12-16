@@ -3,6 +3,11 @@
 
 #include "stdafx.h"
 #include "common.h"
+#include <stdio.h>
+#include "time.h"
+#include <random>
+
+using namespace cv;
 
 
 void testOpenImage()
@@ -388,6 +393,226 @@ void testMouseClick()
 	}
 }
 
+// Lab 1 : Least Mean Squares Line Fitting
+std::vector<Point2f> readPointsFromFile() {
+	int width = 500;
+	int height = 500;
+	int dimension = 2;
+	Mat matrix = Mat(height, width, CV_8UC3);
+
+	FILE* f = fopen("Images/lab1/points3.txt", "r");
+
+	if (f == NULL) {
+		perror("File couldn't be opened! \n");
+		exit(-1);
+	}
+
+	int nrOfPoints;
+	fscanf(f, "%d", &nrOfPoints);
+
+	std::vector<Point2f> points; 
+
+	for (int i = 0; i < nrOfPoints; i++) {
+		float x, y;
+		fscanf(f, "%f%f", &x, &y);
+		points.push_back(Point2f(x, y));
+
+		if (x <= width && y <= height) {
+			circle(matrix, Point2d(x, y), 3, Scalar(255, 0, 0), -1);
+		}
+	}
+
+	fclose(f);
+	return points;
+}
+
+Mat pointsToImage(std::vector<Point2f> points) {
+	int n = points.size();
+	int width = 500;
+	int height = 500;
+	Mat img = Mat(width, height, CV_8UC3);
+
+	for (int i = 0; i < n; i++) {
+		if (points.at(i).x <= height && points.at(i).y <= width) {
+			circle(img, Point2d(points.at(i).x, points.at(i).y), 3, Scalar(255, 0, 0), -1);
+		}
+	}
+
+	return img;
+}
+
+void withNormalEcuation() {
+	std::vector<Point2f> points = readPointsFromFile();
+	int n = points.size();
+	Mat teta = Mat(2, 1, CV_32F);
+	Mat A = Mat(n, 2, CV_32F);
+	Mat b = Mat(n, 1, CV_32F);
+
+	for (int i = 0; i < n; i++) {
+		A.at<float>(i, 1) = points.at(i).x;
+		A.at<float>(i, 0) = 1;
+		b.at<float>(i, 0) = points.at(i).y;
+	}
+
+	teta = (A.t()*A).inv()*A.t()*b;
+	printf("teta0 = %f, teta1 = %f\n", teta.at<float>(0, 0), teta.at<float>(1, 0));
+
+	Mat img = pointsToImage(points);
+	line(img, Point2d(0, teta.at<float>(0, 0)), Point2d(500, teta.at<float>(0, 0) + 500 *
+		teta.at<float>(1, 0)), Scalar(0, 0, 0));
+	imshow("points", img);
+	waitKey(0);
+}
+
+void calculateThetaWithGradientDescent() {
+	std::vector<Point2f> points = readPointsFromFile();
+	int n = points.size();
+	Mat teta = Mat(2, 1, CV_32F);
+
+	// init teta with random values
+	teta.at<float>(0, 0) = rand() % n;
+	teta.at<float>(1, 0) = rand() % n;
+
+	float alpha = 0.000001; // learning rate
+	Mat img = pointsToImage(points);
+
+	float error = 100000;
+
+	while (true)
+	{
+		// calculate gradient
+		Mat gradient = Mat(2, 1, CV_32F);
+		gradient.at<float>(0, 0) = 0;
+		gradient.at<float>(1, 0) = 0;
+		error = 0;
+
+		for (int i = 0; i < n; i++)
+		{
+			gradient.at<float>(0, 0) += teta.at<float>(0, 0) + teta.at<float>(1, 0) * points.at(i).x - points.at(i).y;
+			gradient.at<float>(1, 0) += (teta.at<float>(0, 0) + teta.at<float>(1, 0) * points.at(i).x - points.at(i).y) * points.at(i).x;
+			error += pow(teta.at<float>(0, 0) + teta.at<float>(1, 0) * points.at(i).x - points.at(i).y, 2) / 2;
+		}
+
+		teta = teta - alpha * gradient;
+		line(img, Point2d(0, teta.at<float>(0, 0)), Point2d(500, teta.at<float>(0, 0) + 500 * teta.at<float>(1, 0)), Scalar(0, 0, 0));
+
+		imshow("points", img);
+		printf("%f\n", error);
+		waitKey(100);
+	}
+}
+
+void calculateTheta() {
+	std::vector<Point2f> points = readPointsFromFile();
+	int n = points.size();
+	float sumXY = 0;
+	float sumX = 0;
+	float sumY = 0;
+	float sumX2 = 0;
+
+	for (int i = 0; i < n; i++) {
+		sumX += points.at(i).x;
+		sumY += points.at(i).y;
+		sumXY += points.at(i).x * points.at(i).y;
+		sumX2 += points.at(i).x * points.at(i).x;
+	}
+
+		float teta1 = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+		float teta0 = (sumY - teta1 * sumX) / n;
+
+		Mat img = pointsToImage(points);
+		line(img, Point2d(0, teta0), Point2d(500, teta0 + 500 * teta1), Scalar(0, 0, 0));
+
+		imshow("points", img);
+		waitKey(0);
+}
+
+void lineFittingMethod2() {
+	std::vector<Point2f> points = readPointsFromFile();
+	int n = points.size();
+	float sumXY = 0;
+	float sumX = 0;
+	float sumY = 0;
+	float sumX2Y2 = 0;
+
+	for (int i = 0; i < n; i++) {
+		sumXY += points.at(i).x * points.at(i).y;
+		sumX += points.at(i).x;
+		sumY += points.at(i).y;
+		sumX2Y2 += pow(points.at(i).y, 2) - pow(points.at(i).x, 2);
+	}
+
+	float beta = -0.5 * atan2(2 * sumXY - 2 / n * sumX * sumY, sumX2Y2 + 1 / n * pow(sumX, 2) - 1 / n *pow(sumY, 2));
+	float ro = (cos(beta) * sumX + sin(beta) * sumY) / n;
+
+	Mat img = pointsToImage(points);
+	line(img, Point(0, ro / sin(beta)), Point(img.cols, (ro - img.cols * cos(beta)) / sin(beta)), Scalar(0, 0, 255));
+
+	imshow("points", img);
+	waitKey(0);
+}
+
+std::vector<Point> readPoints() {
+	Mat img = imread("Images/lab2/points1.bmp", CV_LOAD_IMAGE_GRAYSCALE);
+
+	Mat inv;
+	cv::bitwise_not(img, inv);
+	std::vector<Point> points;
+	cv::findNonZero(inv, points);
+	return points;
+}
+
+void ransac() {
+	Mat img = imread("Images/lab2/points5.bmp", CV_LOAD_IMAGE_GRAYSCALE);
+
+	Mat inv;
+	cv::bitwise_not(img, inv);
+	std::vector<Point> points;
+	cv::findNonZero(inv, points);
+
+	float t = 10;
+	float p = 0.99;
+	float q = 0.3;
+	float s = 2;
+
+	int n = points.size();
+	float T = n*q;
+	float N = log(1 - p) / log(1 - pow(q, s));
+
+	int inliner = 0;
+	Point3d optimalLine = Point3d(0, 0, 0);
+
+	srand(time(0));
+	for (int j = 0; (j < N) && (inliner < T); j++) {
+		int p1 = rand() % n;
+		int p2 = rand() % n;
+
+		Point3f line;
+		line.x = points.at(p1).y - points.at(p2).y;
+		line.y = points.at(p2).x - points.at(p1).x;
+		line.z = points.at(p1).x * points.at(p2).y - points.at(p2).x * points.at(p1).y;
+
+		float dist = 0;
+
+		int nrValidPoints = 0;
+
+		for each(Point p in points) {
+			dist = abs(line.x * p.x + line.y * p.y + line.z) / sqrt(line.x * line.x + line.y * line.y);
+			if (dist <= t) {
+				nrValidPoints++;
+			}
+		}	
+		if (nrValidPoints > inliner) {
+			inliner = nrValidPoints;
+			optimalLine = line;
+		}
+	}
+
+	line(img, Point2d(0, -optimalLine.z / optimalLine.y), Point2d(500, (-optimalLine.z - optimalLine.x * 500) / optimalLine.y), Scalar(0, 0, 0));
+	imshow("RANSAC", img);
+	waitKey(0);
+}
+
 int main()
 {
 	int op;
@@ -405,6 +630,11 @@ int main()
 		printf(" 7 - Edges in a video sequence\n");
 		printf(" 8 - Snap frame from live video\n");
 		printf(" 9 - Mouse callback demo\n");
+		printf(" 10 - Lab1 : Least Mean Squares Line Fitting - Normal Equation\n");
+		printf(" 11 - Lab1 : Least Mean Squares Line Fitting - Find theta\n");
+		printf(" 12 - Lab1 : Least Mean Squares Line Fitting - Find theta with gradient descent\n");
+		printf(" 13 - Lab1 : Least Mean Squares Line Fitting - Method 2 \n");
+		printf(" 14 - Lab2 : RANSAC Line Fitting \n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d",&op);
@@ -438,6 +668,21 @@ int main()
 			case 9:
 				testMouseClick();
 				break;
+			case 10:
+				withNormalEcuation();
+				break;
+			case 11:
+				calculateTheta();
+				break;
+			case 12:
+				calculateThetaWithGradientDescent();
+				break;
+			case 13:
+				lineFittingMethod2();
+				break;
+			case 14:
+				ransac();
+
 		}
 	}
 	while (op!=0);
